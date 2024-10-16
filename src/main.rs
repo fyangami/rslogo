@@ -1,7 +1,7 @@
 use clap::Parser;
 use unsvg::Image;
+mod logo_runner;
 mod logo_interpreter;
-mod logo_virtual_machine;
 
 /// A simple program to parse four arguments using clap.
 #[derive(Parser)]
