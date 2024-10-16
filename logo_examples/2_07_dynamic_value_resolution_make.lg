@@ -1,0 +1,18 @@
+PENDOWN
+
+// Values can be variables.
+SETPENCOLOR "1
+MAKE "variableName "name
+MAKE :variableName "10
+LEFT :name
+
+SETPENCOLOR "2
+ADDASSIGN :variableName "10
+FORWARD :name
+
+// Values can be queries.
+SETPENCOLOR "3
+TURN "90
+// Should create a variable "90" with value "9"
+MAKE HEADING "9
+FORWARD :90

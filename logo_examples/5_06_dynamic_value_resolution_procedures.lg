@@ -1,0 +1,35 @@
+PENDOWN
+
+MAKE "variableName "name
+
+// Ensure function parameter names are evaluated at definition-time, not call-time.
+TO Foo :variableName
+	LEFT :name
+END
+
+MAKE "variableName "diffName
+
+Foo "20
+
+
+MAKE "variableName "name
+
+TO Bar "literal :variableName HEADING + "10 "5
+  // Raw/literal value.
+  SETPENCOLOR "1
+	FORWARD :literal
+
+  // Variable.
+  SETPENCOLOR "2
+	FORWARD :name
+
+  // Query.
+  SETPENCOLOR "3
+	FORWARD :0
+
+  // Expression.
+  SETPENCOLOR "4
+	FORWARD :15
+END
+
+Bar "10 "15 "20 "25

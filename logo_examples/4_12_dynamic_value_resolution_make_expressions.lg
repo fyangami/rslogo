@@ -1,0 +1,7 @@
+PENDOWN
+
+// Values can be expressions.
+SETPENCOLOR "4
+// Should create a variable "30" with value "40"
+MAKE + "10 "20 "40
+RIGHT :30
