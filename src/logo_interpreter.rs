@@ -6,7 +6,7 @@ pub struct LogoInterpreter {
     source_code: String,
     cursor: usize,
     line_number: usize,
-    var_table: HashMap<String, i32>,
+    var_table: HashMap<String, String>,
 }
 
 impl LogoInterpreter {
@@ -42,26 +42,19 @@ impl LogoInterpreter {
         self.cursor += statement.len() + 1;
         match token.as_str() {
             t if Self::is_builtin_fn(t) => {
-                self.evaluate_builtin_fn(t, statement, runner)?;
+                return self.evaluate_builtin_fn(t, statement, runner);
             }
             "MAKE" => {
-                self.evaluate_make_statement(statement, runner)?;
+                return self.evaluate_make_statement(statement, runner);
             }
             "ADDASIGN" => {
-                self.evaluate_add_assign_statement(statement, runner)?;
+                return self.evaluate_add_assign_statement(statement, runner);
             }
             _ => {
                 // TODO find custom procedure
+                todo!("unimplemented")
             }
         }
-        if Self::is_builtin_fn(token.as_str()) {
-            let statement = self.collect_statement(Self::get_terminator(token.as_str()))?;
-            self.cursor += statement.len() + 1;
-            return self.evaluate_builtin_fn(token.as_str(), statement, runner);
-        } else {
-            // TODO find custom procedure
-        }
-        todo!("unimplemented")
     }
 
     fn evaluate_builtin_fn(
@@ -158,7 +151,7 @@ impl LogoInterpreter {
     fn parse_numeric(&self, statement: &str, runner: &LogoRunner) -> Result<i32, String> {
         let mut chs = statement.trim().chars();
         match chs.next() {
-            Some(ch) if ch == '"' => {
+            Some(ch) if ch == '"' || ch == ':' => {
                 let i32_str = chs.as_str();
                 return Ok(i32_str
                     .parse()
@@ -180,6 +173,64 @@ impl LogoInterpreter {
             "COLOR" => Ok(runner.get_color_index()),
             _ => Err(format!("invalid numeric expression: {}", statement)),
         }
+    }
+
+    fn evaluate_expr(&self, expr: &str) -> Result<String, String> {
+        let mut items = expr.split_whitespace().collect::<Vec<&str>>();
+        let mut stack: Vec<String> = Vec::new();
+        items.reverse();
+        for item in items {
+            match item {
+                "+" | "-" | "*" | "/" => {
+                    let left = stack
+                        .pop()
+                        .ok_or(format!("invalid expression, stack underflow : {}", expr))?
+                        .parse::<i32>()
+                        .map_err(|e| {
+                            format!("invalid expression, right operand is not a number: {}", e)
+                        })?;
+                    let right = stack
+                        .pop()
+                        .ok_or(format!("invalid expression, stack underflow : {}", expr))?
+                        .parse::<i32>()
+                        .map_err(|e| {
+                            format!("invalid expression, right operand is not a number: {}", e)
+                        })?;
+
+                    let result = match item {
+                        "+" => left + right,
+                        "-" => left - right,
+                        "*" => left * right,
+                        "/" => left / right,
+                        _ => unreachable!(),
+                    };
+                    stack.push(result.to_string());
+                }
+                item if item.starts_with("\"") => {
+                    // literal
+                    if let Some(literal) = item.strip_prefix("\"") {
+                        stack.push(literal.to_string());
+                        continue;
+                    }
+                    return Err(format!("invalid literal: {}", item));
+                }
+                item if item.starts_with(":") => {
+                    // variable
+                    if let Some(var_name) = item.strip_prefix(":") {
+                        if let Some(var_value) = self.var_table.get(var_name) {
+                            stack.push(var_value.to_string());
+                            continue;
+                        }
+                    }
+                    return Err(format!("undefined variable: {}", item));
+                }
+                _ => {}
+            }
+        }
+        if stack.len() != 1 {
+            return Err(format!("invalid expression: {}", expr));
+        }
+        Ok(stack.pop().map(|item| item.to_string()).unwrap())
     }
 
     fn collect_statement(&self, terminator: &str) -> Result<String, String> {
@@ -217,7 +268,7 @@ impl LogoInterpreter {
     fn is_builtin_fn(token: &str) -> bool {
         match token {
             "PENUP" | "PENDOWN" | "FORWARD" | "BACK" | "LEFT" | "RIGHT" | "SETX" | "SETY"
-            | "SETPENCOLOR" | "TURN" | "SETHEADING" | "MAKE" | "TO" | "IF" | "WHILE" | "//" => true,
+            | "SETPENCOLOR" | "TURN" | "SETHEADING" | "//" => true,
             _ => false,
         }
     }
@@ -243,8 +294,9 @@ impl LogoInterpreter {
         if !var_name.starts_with("\"") {
             return Err("invalid variable name".to_string());
         }
+        let var_name = args[0].chars().skip(1).collect::<String>();
         let val = self.parse_numeric(args[1], runner)?;
-        self.var_table.insert(var_name.to_string(), val);
+        self.var_table.insert(var_name, val.to_string());
         Ok(())
     }
 
@@ -261,7 +313,8 @@ impl LogoInterpreter {
         if !var_name.starts_with("\"") {
             return Err("invalid variable name".to_string());
         }
-        if let Some(val) = self.var_table.get(var_name) {
+        let var_name = args[0].chars().skip(1).collect::<String>();
+        if let Some(val) = self.var_table.get(var_name.as_str()) {
             let new_val = val + self.parse_numeric(args[1], runner)?;
             self.var_table.insert(var_name.to_string(), new_val);
             Ok(())
