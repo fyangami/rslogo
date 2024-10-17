@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, f32::consts::E, fmt::format};
 
 use crate::logo_runner::LogoRunner;
 
@@ -30,86 +30,139 @@ impl LogoInterpreter {
 
     fn interpret_statement(&mut self, runner: &mut LogoRunner) -> Result<(), String> {
         let token = self.next_token();
+        if token.len() == 0 {
+            self.cursor += 1;
+        }
+        println!("token: {}", token);
         self.cursor += token.len();
         if token.trim().is_empty() {
-            // TODO
             return Ok(());
         }
-        if Self::is_builtin(token.as_str()) {
-            let statement = self.collect_statement(Self::get_terminator(token.as_str()));
-            self.cursor += statement.len();
-            return self.evaluate_builtin_statement(token.as_str(), statement, runner);
+        let statement = self.collect_statement(Self::get_terminator(&token))?;
+        self.cursor += statement.len() + 1;
+        match token.as_str() {
+            t if Self::is_builtin_fn(t) => {
+                self.evaluate_builtin_fn(t, statement, runner)?;
+            }
+            "MAKE" => {
+                self.evaluate_make_statement(statement, runner)?;
+            }
+            "ADDASIGN" => {
+                self.evaluate_add_assign_statement(statement, runner)?;
+            }
+            _ => {
+                // TODO find custom procedure
+            }
+        }
+        if Self::is_builtin_fn(token.as_str()) {
+            let statement = self.collect_statement(Self::get_terminator(token.as_str()))?;
+            self.cursor += statement.len() + 1;
+            return self.evaluate_builtin_fn(token.as_str(), statement, runner);
         } else {
             // TODO find custom procedure
         }
         todo!("unimplemented")
     }
 
-    fn evaluate_builtin_statement(
+    fn evaluate_builtin_fn(
         &self,
         token: &str,
         statement: String,
         runner: &mut LogoRunner,
     ) -> Result<(), String> {
+        let args = statement
+            .split_whitespace()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<&str>>();
         match token {
             "//" => {
                 // skip all comments
                 return Ok(());
             }
             "PENUP" => {
+                if args.len() > 0 {
+                    return Err(format!("PENUP does not take any arguments"));
+                }
                 runner.pen_up();
             }
             "PENDOWN" => {
+                if args.len() > 0 {
+                    return Err(format!("PENDOWN does not take any arguments"));
+                }
                 runner.pen_down();
             }
             "FORWARD" => {
-                let distance = self.parse_numeric(statement.as_str())?;
+                if args.len() != 1 {
+                    return Err(format!("FORWARD takes exactly one argument"));
+                }
+                let distance = self.parse_numeric(args[0], runner)?;
                 runner.draw_forward(distance)?;
             }
             "BACK" => {
-                let distance = self.parse_numeric(statement.as_str())?;
+                if args.len() != 1 {
+                    return Err(format!("BACK takes exactly one argument"));
+                }
+                let distance = self.parse_numeric(args[0], runner)?;
                 runner.draw_backward(distance)?;
             }
             "LEFT" => {
-                let distance = self.parse_numeric(statement.as_str())?;
+                if args.len() != 1 {
+                    return Err(format!("LEFT takes exactly one argument"));
+                }
+                let distance = self.parse_numeric(args[0], runner)?;
                 runner.draw_left(distance)?;
             }
             "RIGHT" => {
-                let distance = self.parse_numeric(statement.as_str())?;
+                if args.len() != 1 {
+                    return Err(format!("RIGHT takes exactly one argument"));
+                }
+                let distance = self.parse_numeric(args[0], runner)?;
                 runner.draw_right(distance)?;
             }
             "SETX" => {
-                let pos_x = self.parse_numeric(statement.as_str())?;
+                if args.len() != 1 {
+                    return Err(format!("SETX takes exactly one argument"));
+                }
+                let pos_x = self.parse_numeric(args[0], runner)?;
                 runner.set_pos(pos_x, runner.get_pos_y());
             }
             "SETY" => {
-                let pos_y = self.parse_numeric(statement.as_str())?;
+                if args.len() != 1 {
+                    return Err(format!("SETY takes exactly one argument"));
+                }
+                let pos_y = self.parse_numeric(args[0], runner)?;
                 runner.set_pos(runner.get_pos_x(), pos_y);
             }
             "TURN" | "SETHEADING" => {
-                let degree = self.parse_numeric(statement.as_str())?;
+                if args.len() != 1 {
+                    return Err(format!("TURN/SETHEADING takes exactly one argument"));
+                }
+                let degree = self.parse_numeric(args[0], runner)?;
                 runner.turn_degree(degree);
             }
             "SETPENCOLOR" => {
-                let color = self.parse_numeric(statement.as_str())?;
+                if args.len() != 1 {
+                    return Err(format!("SETPENCOLOR takes exactly one argument"));
+                }
+                let color = self.parse_numeric(args[0], runner)?;
                 if color > 15 || color < 0 {
                     return Err("invalid color".to_string());
                 }
-                runner.set_color(unsvg::COLORS[color as usize]);
+                runner.set_color(color as usize);
             }
             _ => {}
         }
-        todo!()
+        Ok(())
     }
 
-    fn parse_numeric(&self, statement: &str) -> Result<i32, String> {
-        let mut chs = statement.chars();
+    fn parse_numeric(&self, statement: &str, runner: &LogoRunner) -> Result<i32, String> {
+        let mut chs = statement.trim().chars();
         match chs.next() {
             Some(ch) if ch == '"' => {
-                return Ok(chs
-                    .as_str()
+                let i32_str = chs.as_str();
+                return Ok(i32_str
                     .parse()
-                    .map_err(|_| "invalid numeric expression")?)
+                    .map_err(|_| format!("invalid numeric expression: {}", i32_str))?);
             }
             Some(ch) if ch == ':' => {
                 return self
@@ -120,28 +173,16 @@ impl LogoInterpreter {
             }
             _ => {}
         }
-        todo!()
-    }
-
-    fn evaluate_numeric_expr(&self, expr: &str) {
-        let mut chars = expr.chars();
-        loop {
-            let mut token = String::new();
-            while let Some(ch) = chars.next() {
-                if ch == ' ' {
-                    break;
-                }
-                token.push(ch);
-            }
-            match token.chars().next() {
-                Some(ch) if ch == '"' => {}
-                Some(ch) if ch == ':' => {}
-                _ => {}
-            }
+        match statement {
+            "XCOR" => Ok(runner.get_pos_x()),
+            "YCOR" => Ok(runner.get_pos_y()),
+            "HEADING" => Ok(runner.get_direction()),
+            "COLOR" => Ok(runner.get_color_index()),
+            _ => Err(format!("invalid numeric expression: {}", statement)),
         }
     }
 
-    fn collect_statement(&self, terminator: &str) -> String {
+    fn collect_statement(&self, terminator: &str) -> Result<String, String> {
         let mut statement = Vec::new();
         let mut cursor = self.cursor;
         let mut matcher = String::new();
@@ -149,12 +190,15 @@ impl LogoInterpreter {
             matcher.push(ch);
             cursor += 1;
             if matcher == terminator {
-                break;
+                return Ok(statement.iter().collect::<String>());
             }
             matcher = matcher.split_off(1);
             statement.push(ch);
         }
-        statement.iter().collect::<String>()
+        Err(format!(
+            "unterminated statement: {}",
+            statement.iter().collect::<String>()
+        ))
     }
 
     fn next_token(&self) -> String {
@@ -162,7 +206,7 @@ impl LogoInterpreter {
         let mut cursor = self.cursor;
         while let Some(ch) = self.source_code.chars().nth(cursor) {
             cursor += 1;
-            if ch == ' ' {
+            if ch == ' ' || ch == '\n' {
                 break;
             }
             token.push(ch);
@@ -170,10 +214,10 @@ impl LogoInterpreter {
         token.iter().collect::<String>()
     }
 
-    fn is_builtin(token: &str) -> bool {
+    fn is_builtin_fn(token: &str) -> bool {
         match token {
             "PENUP" | "PENDOWN" | "FORWARD" | "BACK" | "LEFT" | "RIGHT" | "SETX" | "SETY"
-            | "SETPENCOLOR" | "SETHEADING" | "MAKE" | "TO" | "IF" | "WHILE" | "//" => true,
+            | "SETPENCOLOR" | "TURN" | "SETHEADING" | "MAKE" | "TO" | "IF" | "WHILE" | "//" => true,
             _ => false,
         }
     }
@@ -181,8 +225,48 @@ impl LogoInterpreter {
     fn get_terminator(token: &str) -> &str {
         match token {
             "PENUP" | "PENDOWN" | "FORWARD" | "BACK" | "LEFT" | "RIGHT" | "SETX" | "SETY"
-            | "//" => "\n",
+            | "//" | "SETPENCOLOR" | "SETHEADING" | "TURN" | "MAKE" => "\n",
             _ => "END",
+        }
+    }
+
+    fn evaluate_make_statement(
+        &mut self,
+        statement: String,
+        runner: &LogoRunner,
+    ) -> Result<(), String> {
+        let args = statement.split_whitespace().collect::<Vec<&str>>();
+        if args.len() != 2 {
+            return Err("invalid make statement".to_string());
+        }
+        let var_name = args[0];
+        if !var_name.starts_with("\"") {
+            return Err("invalid variable name".to_string());
+        }
+        let val = self.parse_numeric(args[1], runner)?;
+        self.var_table.insert(var_name.to_string(), val);
+        Ok(())
+    }
+
+    fn evaluate_add_assign_statement(
+        &mut self,
+        statement: String,
+        runner: &LogoRunner,
+    ) -> Result<(), String> {
+        let args = statement.split_whitespace().collect::<Vec<&str>>();
+        if args.len() != 2 {
+            return Err("invalid add assign statement".to_string());
+        }
+        let var_name = args[0];
+        if !var_name.starts_with("\"") {
+            return Err("invalid variable name".to_string());
+        }
+        if let Some(val) = self.var_table.get(var_name) {
+            let new_val = val + self.parse_numeric(args[1], runner)?;
+            self.var_table.insert(var_name.to_string(), new_val);
+            Ok(())
+        } else {
+            Err("variable not found".to_string())
         }
     }
 }

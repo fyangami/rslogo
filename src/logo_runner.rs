@@ -5,6 +5,7 @@ use unsvg::Image;
 pub struct LogoRunner {
     pen_status: PenStatus,
     color: unsvg::Color,
+    color_index: usize,
     x: i32,
     y: i32,
     direction: i32,
@@ -18,6 +19,7 @@ impl LogoRunner {
         LogoRunner {
             pen_status: PenStatus::Up,
             color: unsvg::Color::white(), // TODO
+            color_index: 7,  // white color index is 7
             x: pos_x,
             y: pos_y,
             direction: 0,
@@ -73,8 +75,17 @@ impl LogoRunner {
         self.y
     }
 
-    pub fn set_color(&mut self, color: unsvg::Color) {
-        self.color = color;
+    pub fn get_color_index(&self) -> i32 {
+        self.color_index as i32
+    }
+
+    pub fn get_direction(&self) -> i32 {
+        self.direction
+    }
+
+    pub fn set_color(&mut self, color: usize) {
+        self.color_index = color;
+        self.color = unsvg::COLORS[self.color_index];
     }
 
     pub fn turn_degree(&mut self, degree: i32) {
