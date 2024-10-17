@@ -1,4 +1,4 @@
-use std::{collections::HashMap, f32::consts::E, fmt::format};
+use std::{collections::HashMap, f32::consts::E, fmt::format, intrinsics::unreachable};
 
 use crate::logo_runner::LogoRunner;
 
@@ -33,7 +33,7 @@ impl LogoInterpreter {
         if token.len() == 0 {
             self.cursor += 1;
         }
-        println!("token: {}", token);
+        // println!("token: {}", token);
         self.cursor += token.len();
         if token.trim().is_empty() {
             return Ok(());
@@ -175,7 +175,7 @@ impl LogoInterpreter {
         }
     }
 
-    fn evaluate_expr(&self, expr: &str) -> Result<String, String> {
+    fn evaluate_expr(&self, expr: &str, runner: &LogoRunner) -> Result<String, String> {
         let mut items = expr.split_whitespace().collect::<Vec<&str>>();
         let mut stack: Vec<String> = Vec::new();
         items.reverse();
@@ -206,6 +206,16 @@ impl LogoInterpreter {
                     };
                     stack.push(result.to_string());
                 }
+                "EQ" | "NE" | "LT" | "GT" => {
+                    let left = stack
+                        .pop()
+                        .ok_or(format!("invalid expression, stack underflow : {}", expr))?;
+                    let right = stack
+                        .pop()
+                        .ok_or(format!("invalid expression, stack underflow : {}", expr))?;
+                    let result = self.logic_op(&left, &right, item)?;
+                    stack.push(result.to_string().to_uppercase());
+                }
                 item if item.starts_with("\"") => {
                     // literal
                     if let Some(literal) = item.strip_prefix("\"") {
@@ -224,6 +234,10 @@ impl LogoInterpreter {
                     }
                     return Err(format!("undefined variable: {}", item));
                 }
+                "XCOR" => stack.push(runner.get_pos_x().to_string()),
+                "YCOR" => stack.push(runner.get_pos_y().to_string()),
+                "HEADING" => stack.push(runner.get_direction().to_string()),
+                "COLOR" => stack.push(runner.get_color_index().to_string()),
                 _ => {}
             }
         }
@@ -231,6 +245,43 @@ impl LogoInterpreter {
             return Err(format!("invalid expression: {}", expr));
         }
         Ok(stack.pop().map(|item| item.to_string()).unwrap())
+    }
+
+    fn logic_op(&self, left: &str, right: &str, op: &str) -> Result<bool, String> {
+        // boolean comparison
+        if left == "TRUE" || left == "FALSE" || right == "TRUE" || right == "FALSE" {
+            if left != "TRUE" && left != "FALSE" {
+                return Err(format!(
+                    "invalid expression, right operand is not a boolean: {}",
+                    left
+                ));
+            }
+            if right != "TRUE" && right != "FALSE" {
+                return Err(format!(
+                    "invalid expression, right operand is not a boolean: {}",
+                    right
+                ));
+            }
+            let left = left == "TRUE";
+            let right = right == "TRUE";
+            match op {
+                "EQ" => return Ok(left == right),
+                "NE" => return Ok(left != right),
+                _ => return Err(format!("invalid operator: {}", op)),
+            }
+        }
+        // numeric comparison
+        let left = left
+            .parse::<i32>()
+            .map_err(|_| format!("invalid expression: {}", left))?;
+        let right = right
+            .parse::<i32>()
+            .map_err(|_| format!("invalid expression: {}", right))?;
+        match op {
+            "GT" => return Ok(left > right),
+            "LT" => return Ok(left < right),
+            _ => return Err(format!("invalid operator: {}", op)),
+        }
     }
 
     fn collect_statement(&self, terminator: &str) -> Result<String, String> {
