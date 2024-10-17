@@ -7,7 +7,7 @@ fn test_file() {
     let file_path = "logo_examples/2_00_penup_pendown_vars.lg";
     let content = std::fs::read_to_string(file_path).expect("Unable to read logo file");
 
-    let mut interpreter = logo_interpreter::LogoInterpreter::new(content);
+    let mut interpreter = logo_interpreter::LogoInterpreter::default(content);
     let mut runner = logo_runner::LogoRunner::new(300, 300);
     println!("result: {:#?}", interpreter.interpret(&mut runner));
     runner

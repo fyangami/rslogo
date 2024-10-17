@@ -5,16 +5,21 @@ pub struct LogoInterpreter {
     source_code: String,
     cursor: usize,
     line_number: usize,
-    var_table: HashMap<String, String>,
+    // ignore the contention in single thread
+    var_table: Box<HashMap<String, String>>,
 }
 
 impl LogoInterpreter {
-    pub fn new(source_code: String) -> Self {
+    pub fn default(source_code: String) -> Self {
+        Self::new(source_code, Box::new(HashMap::new()))
+    }
+
+    pub fn new(source_code: String, var_table: Box<HashMap<String, String>>) -> Self {
         Self {
             source_code,
             cursor: 0,
             line_number: 1,
-            var_table: HashMap::new(),
+            var_table,
         }
     }
 
@@ -23,11 +28,11 @@ impl LogoInterpreter {
             if self.cursor >= self.source_code.len() {
                 return Ok(());
             }
-            self.interpret_statement(runner)?;
+            self.interpret_expr(runner)?;
         }
     }
 
-    fn interpret_statement(&mut self, runner: &mut LogoRunner) -> Result<(), String> {
+    fn interpret_expr(&mut self, runner: &mut LogoRunner) -> Result<(), String> {
         let token = self.next_token();
         if token.len() == 0 {
             self.cursor += 1;
@@ -49,9 +54,15 @@ impl LogoInterpreter {
             "ADDASIGN" => {
                 return self.evaluate_add_assign_statement(expr, runner, false);
             }
+            "IF" | "WHILE" => {
+                return self.evaluate_conditional_statement(token, expr, runner);
+            }
+            "TO" => {
+                todo!()
+            }
             _ => {
                 // TODO find custom procedure
-                todo!("unimplemented")
+                todo!("unimplemented token")
             }
         }
     }
@@ -340,5 +351,33 @@ impl LogoInterpreter {
             return Ok(());
         }
         Err(format!("invalid add assign statement: {}", expr))
+    }
+
+    fn evaluate_conditional_statement(
+        &self,
+        token: String,
+        expr: String,
+        runner: &mut LogoRunner,
+    ) -> Result<(), String> {
+        let oneshot = token == "IF";
+        if let Some((cond_expr, body)) = expr.split_once("\n") {
+            loop {
+                let result = self.evaluate_expr(cond_expr, runner)?;
+                if result == "TRUE" {
+                    // condition is true, execute the body
+                    if let Some(body_code) = body.trim().strip_suffix("END") {
+                        let mut interpreter =
+                            LogoInterpreter::new(body_code.to_string(), self.var_table.clone());
+                        interpreter.interpret(runner)?;
+                    }
+                } else {
+                    return Ok(());
+                }
+                if oneshot {
+                    return Ok(());
+                }
+            }
+        }
+        return Err(format!("invalid conditional statement: {}", expr));
     }
 }

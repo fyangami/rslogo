@@ -31,7 +31,7 @@ fn main() -> Result<(), ()> {
     // read content from file_path
     let content = std::fs::read_to_string(&file_path).expect("Unable to read logo file");
     let mut runner = logo_runner::LogoRunner::new(width, height);
-    let mut interpreter = logo_interpreter::LogoInterpreter::new(content);
+    let mut interpreter = logo_interpreter::LogoInterpreter::default(content);
     match interpreter.interpret(&mut runner) {
         Err(e) => {
             eprintln!("error incurred: {}", e);
