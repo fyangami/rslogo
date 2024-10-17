@@ -1,7 +1,8 @@
+use std::process::exit;
 use clap::Parser;
-use unsvg::Image;
-mod logo_runner;
 mod logo_interpreter;
+mod logo_runner;
+mod logo_interpreter_tests;
 
 /// A simple program to parse four arguments using clap.
 #[derive(Parser)]
@@ -27,29 +28,18 @@ fn main() -> Result<(), ()> {
     let image_path = args.image_path;
     let height = args.height;
     let width = args.width;
-
-    let image = Image::new(width, height);
-
-    match image_path.extension().and_then(|s| s.to_str()) {
-        Some("svg") => {
-            let res = image.save_svg(&image_path);
-            if let Err(e) = res {
-                eprintln!("Error saving svg: {e}");
-                return Err(());
-            }
-        }
-        Some("png") => {
-            let res = image.save_png(&image_path);
-            if let Err(e) = res {
-                eprintln!("Error saving png: {e}");
-                return Err(());
-            }
+    // read content from file_path
+    let content = std::fs::read_to_string(&file_path).expect("Unable to read logo file");
+    let mut runner = logo_runner::LogoRunner::new(width, height);
+    let mut interpreter = logo_interpreter::LogoInterpreter::new(content);
+    match interpreter.interpret(&mut runner) {
+        Err(e) => {
+            eprintln!("error incurred: {}", e);
+            exit(1)
         }
         _ => {
-            eprintln!("File extension not supported");
-            return Err(());
+            runner.save(&image_path).expect("save image failed");
         }
     }
-
     Ok(())
 }
