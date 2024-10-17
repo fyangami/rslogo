@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::logo_runner::LogoRunner;
+use std::collections::HashMap;
 
 pub struct LogoInterpreter {
     source_code: String,
@@ -47,7 +47,7 @@ impl LogoInterpreter {
                 return self.evaluate_make_statement(expr, runner);
             }
             "ADDASIGN" => {
-                return self.evaluate_add_assign_statement(expr, runner);
+                return self.evaluate_add_assign_statement(expr, runner, false);
             }
             _ => {
                 // TODO find custom procedure
@@ -294,45 +294,51 @@ impl LogoInterpreter {
         }
     }
 
-    fn evaluate_make_statement(
-        &mut self,
-        expr: String,
-        runner: &LogoRunner,
-    ) -> Result<(), String> {
-        let args = expr.split_whitespace().collect::<Vec<&str>>();
-        if args.len() != 2 {
-            return Err("invalid make statement".to_string());
-        }
-        let var_name = expr;
-        if !var_name.starts_with("\"") {
-            return Err("invalid variable name".to_string());
-        }
-        let var_name = expr.chars().skip(1).collect::<String>();
-        let val = self.parse_numeric(args[1], runner)?;
-        self.var_table.insert(var_name, val.to_string());
-        Ok(())
+    fn evaluate_make_statement(&mut self, expr: String, runner: &LogoRunner) -> Result<(), String> {
+        self.evaluate_add_assign_statement(expr, runner, true)
     }
 
     fn evaluate_add_assign_statement(
         &mut self,
         expr: String,
         runner: &LogoRunner,
+        initialize: bool,
     ) -> Result<(), String> {
-        let args = expr.split_whitespace().collect::<Vec<&str>>();
-        if args.len() != 2 {
-            return Err("invalid add assign statement".to_string());
+        if let Some((var_name, val)) = expr.split_once(" ") {
+            let mut parsed_var_name = "";
+            if var_name.starts_with("\"") {
+                if let Some(var_name) = var_name.strip_prefix("\"") {
+                    parsed_var_name = var_name;
+                }
+            }
+            if var_name.starts_with(":") {
+                if let Some(var_name) = var_name.strip_prefix(":") {
+                    parsed_var_name = self.var_table.get(var_name).ok_or("variable not found")?;
+                }
+            }
+            if parsed_var_name.is_empty() {
+                return Err(format!("invalid variable name: {}", var_name));
+            }
+            let mut old_val = "";
+            if let Some(val) = self.var_table.get(parsed_var_name) {
+                old_val = val;
+            }
+            if old_val.is_empty() && !initialize {
+                if initialize {
+                    old_val = "0"
+                } else {
+                    return Err(format!("variable not initialized: {}", parsed_var_name));
+                }
+            }
+            let val = self.evaluate_expr(val, runner)?;
+            let new_val = old_val
+                .parse::<i32>()
+                .map_err(|_| "invalid numeric value")?
+                + val.parse::<i32>().map_err(|_| "invalid numeric value")?;
+            self.var_table
+                .insert(parsed_var_name.to_string(), new_val.to_string());
+            return Ok(());
         }
-        let var_name = expr;
-        if !var_name.starts_with("\"") {
-            return Err("invalid variable name".to_string());
-        }
-        let var_name = expr.chars().skip(1).collect::<String>();
-        if let Some(val) = self.var_table.get(var_name.as_str()) {
-            let new_val = val + self.parse_numeric(args[1], runner)?;
-            self.var_table.insert(var_name.to_string(), new_val);
-            Ok(())
-        } else {
-            Err("variable not found".to_string())
-        }
+        Err(format!("invalid add assign statement: {}", expr))
     }
 }
