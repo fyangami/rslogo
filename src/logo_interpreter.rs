@@ -60,6 +60,10 @@ impl LogoInterpreter {
             "TO" => {
                 todo!()
             }
+            "//" => {
+                // skip comments
+                return Ok(());
+            }
             _ => {
                 // TODO find custom procedure
                 todo!("unimplemented token")
@@ -73,82 +77,52 @@ impl LogoInterpreter {
         expr: String,
         runner: &mut LogoRunner,
     ) -> Result<(), String> {
+        let val = self.evaluate_expr(&expr, runner)?;
         match token {
-            "//" => {
-                // skip all comments
-                return Ok(());
-            }
-            "PENUP" => {
-                runner.pen_up();
-            }
-            "PENDOWN" => {
-                runner.pen_down();
-            }
-            "FORWARD" => {
-                let distance = self
-                    .evaluate_expr(&expr, runner)?
-                    .parse()
-                    .map_err(|_| format!("invalid argument: {}", expr))?;
-                runner.draw_forward(distance)?;
-            }
-            "BACK" => {
-                let distance = self
-                    .evaluate_expr(&expr, runner)?
-                    .parse()
-                    .map_err(|_| format!("invalid argument: {}", expr))?;
-                runner.draw_backward(distance)?;
-            }
-            "LEFT" => {
-                let distance = self
-                    .evaluate_expr(&expr, runner)?
-                    .parse()
-                    .map_err(|_| format!("invalid argument: {}", expr))?;
-                runner.draw_left(distance)?;
-            }
-            "RIGHT" => {
-                let distance = self
-                    .evaluate_expr(&expr, runner)?
-                    .parse()
-                    .map_err(|_| format!("invalid argument: {}", expr))?;
-                runner.draw_right(distance)?;
-            }
-            "SETX" => {
-                let pos_x = self
-                    .evaluate_expr(&expr, runner)?
-                    .parse()
-                    .map_err(|_| format!("invalid argument: {}", expr))?;
-                runner.set_pos(pos_x, runner.get_pos_y());
-            }
-            "SETY" => {
-                let pos_y = self
-                    .evaluate_expr(&expr, runner)?
-                    .parse()
-                    .map_err(|_| format!("invalid argument: {}", expr))?;
-                runner.set_pos(runner.get_pos_x(), pos_y);
-            }
-            "TURN" | "SETHEADING" => {
-                let degree = self
-                    .evaluate_expr(&expr, runner)?
-                    .parse()
-                    .map_err(|_| format!("invalid argument: {}", expr))?;
-                runner.turn_degree(degree);
-            }
-            "SETPENCOLOR" => {
-                let color: i32 = self
-                    .evaluate_expr(&expr, runner)?
-                    .parse()
-                    .map_err(|_| format!("invalid argument: {}", expr))?;
-                if color > 15 || color < 0 {
-                    return Err("invalid color".to_string());
+            "PENUP" | "PENDOWN" => {
+                if val.len() != 0 {
+                    return Err(format!("invalid argument: {}", expr));
                 }
-                runner.set_color(color as usize);
+                if token == "PENUP" {
+                    runner.pen_up();
+                } else {
+                    runner.pen_down();
+                }
             }
-            _ => {}
+            "FORWARD" | "BACK" | "LEFT" | "RIGHT" | "SETX" | "SETY" | "SETPENCOLOR" | "TURN"
+            | "SETHEADING" => {
+                if val.len() != 1 {
+                    return Err(format!("invalid argument: {}", expr));
+                }
+                let val: i32 = val
+                    .iter()
+                    .next()
+                    .unwrap()
+                    .parse()
+                    .map_err(|_| format!("invalid argument: {}", expr))?;
+                match token {
+                    "FORWARD" => runner.draw_forward(val)?,
+                    "BACK" => runner.draw_backward(val)?,
+                    "LEFT" => runner.draw_left(val)?,
+                    "RIGHT" => runner.draw_right(val)?,
+                    "SETX" => runner.set_pos(val, runner.get_pos_y()),
+                    "SETY" => runner.set_pos(runner.get_pos_x(), val),
+                    "SETPENCOLOR" => {
+                        if val > 15 || val < 0 {
+                            return Err("invalid color".to_string());
+                        }
+                        runner.set_color(val as usize);
+                    }
+                    "TURN" | "SETHEADING" => runner.turn_degree(val),
+                    _ => unreachable!(),
+                }
+            }
+            _ => return Err(format!("unimplemented builtin function: {}", token)),
         }
         Ok(())
     }
 
-    fn evaluate_expr(&self, expr: &str, runner: &LogoRunner) -> Result<String, String> {
+    fn evaluate_expr(&self, expr: &str, runner: &LogoRunner) -> Result<Vec<String>, String> {
         let mut items = expr.split_whitespace().collect::<Vec<&str>>();
         let mut stack: Vec<String> = Vec::new();
         items.reverse();
@@ -214,10 +188,7 @@ impl LogoInterpreter {
                 _ => {}
             }
         }
-        if stack.len() != 1 {
-            return Err(format!("invalid expression: {}", expr));
-        }
-        Ok(stack.pop().map(|item| item.to_string()).unwrap())
+        Ok(stack.to_vec())
     }
 
     fn logical_op(&self, left: &str, right: &str, op: &str) -> Result<bool, String> {
@@ -342,10 +313,18 @@ impl LogoInterpreter {
                 }
             }
             let val = self.evaluate_expr(val, runner)?;
+            if val.len() != 1 {
+                return Err(format!("invalid numeric value: {:?}", val));
+            }
             let new_val = old_val
                 .parse::<i32>()
                 .map_err(|_| "invalid numeric value")?
-                + val.parse::<i32>().map_err(|_| "invalid numeric value")?;
+                + val
+                    .iter()
+                    .next()
+                    .unwrap()
+                    .parse::<i32>()
+                    .map_err(|_| "invalid numeric value")?;
             self.var_table
                 .insert(parsed_var_name.to_string(), new_val.to_string());
             return Ok(());
@@ -363,7 +342,10 @@ impl LogoInterpreter {
         if let Some((cond_expr, body)) = expr.split_once("\n") {
             loop {
                 let result = self.evaluate_expr(cond_expr, runner)?;
-                if result == "TRUE" {
+                if result.len() != 1 {
+                    return Err(format!("invalid conditional expression: {:?}", result));
+                }
+                if result.iter().next().unwrap() == "TRUE" {
                     // condition is true, execute the body
                     if let Some(body_code) = body.trim().strip_suffix("END") {
                         let mut interpreter =
