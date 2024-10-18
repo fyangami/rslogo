@@ -8,9 +8,10 @@ pub struct LogoInterpreter {
     // ignore the contention in single thread
     var_table: Box<HashMap<String, String>>,
     procedure_table: Box<HashMap<String, LogoProcedure>>,
-    arg_vars_table: Box<HashMap<String, String>>,
+    arg_vars_table: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone)]
 pub struct LogoProcedure {
     source_code: String,
     args: Vec<String>,
@@ -18,24 +19,26 @@ pub struct LogoProcedure {
 
 impl LogoInterpreter {
     pub fn default(source_code: String) -> Self {
-        Self::new(source_code, Box::new(HashMap::new()))
+        Self::new(
+            source_code,
+            Box::new(HashMap::new()),
+            Box::new(HashMap::new()),
+            HashMap::new(),
+        )
     }
 
-    pub fn new(source_code: String, var_table: Box<HashMap<String, String>>) -> Self {
-        Self::new_with_args(source_code, var_table, Box::new(HashMap::new()))
-    }
-
-    pub fn new_with_args(
+    pub fn new(
         source_code: String,
         var_table: Box<HashMap<String, String>>,
-        arg_vars_table: Box<HashMap<String, String>>,
+        procedure_table: Box<HashMap<String, LogoProcedure>>,
+        arg_vars_table: HashMap<String, String>,
     ) -> Self {
         Self {
             source_code,
             cursor: 0,
             var_table,
             arg_vars_table,
-            procedure_table: Box::new(HashMap::new()),
+            procedure_table,
         }
     }
 
@@ -229,6 +232,8 @@ impl LogoInterpreter {
         match op {
             GT => return Ok(left > right),
             LT => return Ok(left < right),
+            EQ => return Ok(left == right),
+            NE => return Ok(left != right),
             _ => return Err(format!("invalid operator: {}", op)),
         }
     }
@@ -278,7 +283,8 @@ impl LogoInterpreter {
         match token {
             PENUP | PENDOWN | FORWARD | BACK | LEFT | RIGHT | SETX | SETY | SETPENCOLOR | TURN
             | SETHEADING | MAKE | END | ADDASSIGN => "\n",
-            TO | WHILE | IF => "END",
+            TO => "END",
+            IF | WHILE => "]",
             _ => "\n",
         }
     }
@@ -365,7 +371,11 @@ impl LogoInterpreter {
         runner: &mut LogoRunner,
     ) -> Result<(), String> {
         let oneshot = token == IF;
-        if let Some((cond_expr, body)) = expr.trim().split_once("\n") {
+        if let Some((mut cond_expr, body)) = expr.trim().split_once("\n") {
+            cond_expr = cond_expr
+                .trim()
+                .strip_suffix("[")
+                .ok_or(format!("invalid conditional statement: {}", cond_expr))?;
             loop {
                 let result = self.evaluate_expr(cond_expr, runner)?;
                 if result.len() != 1 {
@@ -373,9 +383,13 @@ impl LogoInterpreter {
                 }
                 if result.iter().next().unwrap() == TRUE {
                     // condition is true, execute the body
-                    if let Some(body_code) = body.trim().strip_suffix("END") {
-                        let mut interpreter =
-                            LogoInterpreter::new(body_code.to_string(), self.var_table.clone());
+                    if let Some(body_code) = body.trim().strip_suffix("]") {
+                        let mut interpreter = LogoInterpreter::new(
+                            body_code.to_string(),
+                            self.var_table.clone(),
+                            self.procedure_table.clone(),
+                            self.arg_vars_table.clone(),
+                        );
                         interpreter.interpret(runner)?;
                     }
                 } else {
@@ -429,17 +443,17 @@ impl LogoInterpreter {
                     token
                 ));
             }
-            let mut arg_vars_table = Box::new(HashMap::new());
+            let mut arg_vars_table = HashMap::new();
             arg_vars.iter().enumerate().for_each(|(i, v)| {
                 arg_vars_table.insert(procedure.args[i].to_string(), v.to_string());
             });
             println!("define: arg_vars_table: {:?}", arg_vars_table);
-            let mut interpreter = LogoInterpreter::new_with_args(
+            let mut interpreter = LogoInterpreter::new(
                 procedure.source_code.to_string(),
                 self.var_table.clone(),
+                self.procedure_table.clone(),
                 arg_vars_table,
             );
-
             return interpreter.interpret(runner);
         }
         return Err(format!("unknown procedure: {}", token));
