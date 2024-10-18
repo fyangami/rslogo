@@ -1,4 +1,5 @@
-use crate::logo_runner::LogoRunner;
+use crate::{keywords, logo_runner::LogoRunner};
+use keywords::*;
 use std::collections::HashMap;
 
 pub struct LogoInterpreter {
@@ -7,6 +8,12 @@ pub struct LogoInterpreter {
     line_number: usize,
     // ignore the contention in single thread
     var_table: Box<HashMap<String, String>>,
+    procedure_table: Box<HashMap<String, LogoProcedure>>,
+}
+
+pub struct LogoProcedure {
+    source_code: String,
+    args: Vec<String>,
 }
 
 impl LogoInterpreter {
@@ -20,6 +27,7 @@ impl LogoInterpreter {
             cursor: 0,
             line_number: 1,
             var_table,
+            procedure_table: Box::new(HashMap::new()),
         }
     }
 
@@ -45,24 +53,24 @@ impl LogoInterpreter {
         let expr = self.collect_expr(Self::get_terminator(&token))?;
         self.cursor += expr.len() + 1;
         match token.as_str() {
+            COMMENT => {
+                // skip comments
+                return Ok(());
+            }
             t if Self::is_builtin_fn(t) => {
                 return self.evaluate_builtin_fn(t, expr, runner);
             }
-            "MAKE" => {
+            MAKE => {
                 return self.evaluate_make_statement(expr, runner);
             }
-            "ADDASIGN" => {
+            ADDASSIGN => {
                 return self.evaluate_add_assign_statement(expr, runner, false);
             }
-            "IF" | "WHILE" => {
+            IF | WHILE => {
                 return self.evaluate_conditional_statement(token, expr, runner);
             }
-            "TO" => {
-                todo!()
-            }
-            "//" => {
-                // skip comments
-                return Ok(());
+            TO => {
+                return self.evaluate_procedure_definition(expr, runner);
             }
             _ => {
                 // TODO find custom procedure
@@ -79,7 +87,7 @@ impl LogoInterpreter {
     ) -> Result<(), String> {
         let val = self.evaluate_expr(&expr, runner)?;
         match token {
-            "PENUP" | "PENDOWN" => {
+            PENUP | PENDOWN => {
                 if val.len() != 0 {
                     return Err(format!("invalid argument: {}", expr));
                 }
@@ -89,8 +97,7 @@ impl LogoInterpreter {
                     runner.pen_down();
                 }
             }
-            "FORWARD" | "BACK" | "LEFT" | "RIGHT" | "SETX" | "SETY" | "SETPENCOLOR" | "TURN"
-            | "SETHEADING" => {
+            FORWARD | BACK | LEFT | RIGHT | SETX | SETY | SETPENCOLOR | TURN | SETHEADING => {
                 if val.len() != 1 {
                     return Err(format!("invalid argument: {}", expr));
                 }
@@ -101,19 +108,19 @@ impl LogoInterpreter {
                     .parse()
                     .map_err(|_| format!("invalid argument: {}", expr))?;
                 match token {
-                    "FORWARD" => runner.draw_forward(val)?,
-                    "BACK" => runner.draw_backward(val)?,
-                    "LEFT" => runner.draw_left(val)?,
-                    "RIGHT" => runner.draw_right(val)?,
-                    "SETX" => runner.set_pos(val, runner.get_pos_y()),
-                    "SETY" => runner.set_pos(runner.get_pos_x(), val),
-                    "SETPENCOLOR" => {
+                    FORWARD => runner.draw_forward(val)?,
+                    BACK => runner.draw_backward(val)?,
+                    LEFT => runner.draw_left(val)?,
+                    RIGHT => runner.draw_right(val)?,
+                    SETX => runner.set_pos(val, runner.get_pos_y()),
+                    SETY => runner.set_pos(runner.get_pos_x(), val),
+                    SETPENCOLOR => {
                         if val > 15 || val < 0 {
                             return Err("invalid color".to_string());
                         }
                         runner.set_color(val as usize);
                     }
-                    "TURN" | "SETHEADING" => runner.turn_degree(val),
+                    TURN | SETHEADING => runner.turn_degree(val),
                     _ => unreachable!(),
                 }
             }
@@ -262,16 +269,16 @@ impl LogoInterpreter {
 
     fn is_builtin_fn(token: &str) -> bool {
         match token {
-            "PENUP" | "PENDOWN" | "FORWARD" | "BACK" | "LEFT" | "RIGHT" | "SETX" | "SETY"
-            | "SETPENCOLOR" | "TURN" | "SETHEADING" | "//" => true,
+            PENUP | PENDOWN | FORWARD | BACK | LEFT | RIGHT | SETX | SETY | SETPENCOLOR | TURN
+            | SETHEADING => true,
             _ => false,
         }
     }
 
     fn get_terminator(token: &str) -> &str {
         match token {
-            "PENUP" | "PENDOWN" | "FORWARD" | "BACK" | "LEFT" | "RIGHT" | "SETX" | "SETY"
-            | "//" | "SETPENCOLOR" | "SETHEADING" | "TURN" | "MAKE" => "\n",
+            PENUP | PENDOWN | FORWARD | BACK | LEFT | RIGHT | SETX | SETY | SETPENCOLOR | TURN
+            | SETHEADING | MAKE | END | ADDASSIGN => "\n",
             _ => "END",
         }
     }
@@ -361,5 +368,32 @@ impl LogoInterpreter {
             }
         }
         return Err(format!("invalid conditional statement: {}", expr));
+    }
+
+    fn evaluate_procedure_definition(
+        &mut self,
+        expr: String,
+        runner: &mut LogoRunner,
+    ) -> Result<(), String> {
+        if let Some((definition_expr, body)) = expr.split_once("\n") {
+            let result: Vec<String> = self.evaluate_expr(definition_expr, runner)?;
+            if result.len() < 1 {
+                return Err(format!("invalid procedure definition: {}", expr));
+            }
+            let mut literals = result.iter();
+            let procedure_name = literals.next().unwrap().to_string();
+            let args: Vec<String> = literals.map(|s| s.to_string()).collect();
+            if let Some(body_code) = body.trim().strip_suffix("END") {
+                self.procedure_table.insert(
+                    procedure_name,
+                    LogoProcedure {
+                        source_code: body_code.to_string(),
+                        args,
+                    },
+                );
+                return Ok(());
+            }
+        }
+        return Err(format!("invalid procedure definition: {}", expr));
     }
 }
