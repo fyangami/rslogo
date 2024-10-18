@@ -59,7 +59,7 @@ impl LogoInterpreter {
             return Ok(());
         }
         let expr = self.collect_expr(Self::get_terminator(&token))?;
-        self.cursor += expr.len() + 1;
+        self.cursor += expr.len();
         match token.as_str() {
             COMMENT => {
                 // skip comments
@@ -67,7 +67,7 @@ impl LogoInterpreter {
             }
             t if Self::is_builtin_fn(t) => self.evaluate_builtin_fn(t, expr, runner),
             MAKE => self.evaluate_make_statement(expr, runner),
-            ADDASSIGN => self.evaluate_add_assign_statement(expr, runner, false),
+            ADDASSIGN => self.evaluate_add_assign_statement(expr, runner),
             IF | WHILE => self.evaluate_conditional_statement(token, expr, runner),
             TO => self.evaluate_procedure_definition(expr, runner),
             _ => self.find_evaluate_procedure(token, expr, runner),
@@ -125,7 +125,7 @@ impl LogoInterpreter {
     }
 
     fn evaluate_expr(&self, expr: &str, runner: &LogoRunner) -> Result<Vec<String>, String> {
-        let mut items = expr.split_whitespace().collect::<Vec<&str>>();
+        let mut items = expr.trim().split_whitespace().collect::<Vec<&str>>();
         let mut stack: Vec<String> = Vec::new();
         items.reverse();
         for item in items {
@@ -238,15 +238,13 @@ impl LogoInterpreter {
     fn collect_expr(&self, terminator: &str) -> Result<String, String> {
         let mut expr = Vec::new();
         let mut cursor = self.cursor;
-        let mut matcher = String::new();
         while let Some(ch) = self.source_code.chars().nth(cursor) {
-            matcher.push(ch);
-            cursor += 1;
+            let matcher = &self.source_code[cursor - terminator.len() + 1..cursor + 1];
+            expr.push(ch);
             if matcher == terminator {
                 return Ok(expr.iter().collect::<String>());
             }
-            matcher = matcher.split_off(1);
-            expr.push(ch);
+            cursor += 1;
         }
         Err(format!(
             "unterminated statement: {}",
@@ -285,16 +283,7 @@ impl LogoInterpreter {
     }
 
     fn evaluate_make_statement(&mut self, expr: String, runner: &LogoRunner) -> Result<(), String> {
-        self.evaluate_add_assign_statement(expr, runner, true)
-    }
-
-    fn evaluate_add_assign_statement(
-        &mut self,
-        expr: String,
-        runner: &LogoRunner,
-        initialize: bool,
-    ) -> Result<(), String> {
-        if let Some((var_name, val)) = expr.split_once(" ") {
+        if let Some((var_name, val)) = expr.trim().split_once(" ") {
             let mut parsed_var_name = "";
             if var_name.starts_with("\"") {
                 if let Some(var_name) = var_name.strip_prefix("\"") {
@@ -309,16 +298,44 @@ impl LogoInterpreter {
             if parsed_var_name.is_empty() {
                 return Err(format!("invalid variable name: {}", var_name));
             }
-            let mut old_val = "";
+            let val = self.evaluate_expr(val, runner)?;
+            if val.len() != 1 {
+                return Err(format!("invalid make value: {:?}", val));
+            }
+            self.var_table.insert(
+                parsed_var_name.to_string(),
+                val.iter().next().unwrap().to_string(),
+            );
+            return Ok(());
+        }
+        Err(format!("invalid add assign statement: {}", expr))
+    }
+
+    fn evaluate_add_assign_statement(
+        &mut self,
+        expr: String,
+        runner: &LogoRunner,
+    ) -> Result<(), String> {
+        if let Some((var_name, val)) = expr.trim().split_once(" ") {
+            let mut parsed_var_name = "";
+            if var_name.starts_with("\"") {
+                if let Some(var_name) = var_name.strip_prefix("\"") {
+                    parsed_var_name = var_name;
+                }
+            }
+            if var_name.starts_with(":") {
+                if let Some(var_name) = var_name.strip_prefix(":") {
+                    parsed_var_name = self.var_table.get(var_name).ok_or("variable not found")?;
+                }
+            }
+            if parsed_var_name.is_empty() {
+                return Err(format!("invalid variable name: {}", var_name));
+            }
+            let old_val;
             if let Some(val) = self.var_table.get(parsed_var_name) {
                 old_val = val;
-            }
-            if old_val.is_empty() && !initialize {
-                if initialize {
-                    old_val = "0"
-                } else {
-                    return Err(format!("variable not initialized: {}", parsed_var_name));
-                }
+            } else {
+                return Err(format!("variable not found: {}", parsed_var_name));
             }
             let val = self.evaluate_expr(val, runner)?;
             if val.len() != 1 {
@@ -347,7 +364,7 @@ impl LogoInterpreter {
         runner: &mut LogoRunner,
     ) -> Result<(), String> {
         let oneshot = token == IF;
-        if let Some((cond_expr, body)) = expr.split_once("\n") {
+        if let Some((cond_expr, body)) = expr.trim().split_once("\n") {
             loop {
                 let result = self.evaluate_expr(cond_expr, runner)?;
                 if result.len() != 1 {
@@ -376,23 +393,22 @@ impl LogoInterpreter {
         expr: String,
         runner: &mut LogoRunner,
     ) -> Result<(), String> {
-        if let Some((definition_expr, body)) = expr.split_once("\n") {
-            let result: Vec<String> = self.evaluate_expr(definition_expr, runner)?;
-            if result.len() < 1 {
-                return Err(format!("invalid procedure definition: {}", expr));
-            }
-            let mut literals = result.iter();
-            let procedure_name = literals.next().unwrap().to_string();
-            let args: Vec<String> = literals.map(|s| s.to_string()).collect();
-            if let Some(body_code) = body.trim().strip_suffix("END") {
-                self.procedure_table.insert(
-                    procedure_name,
-                    LogoProcedure {
-                        source_code: body_code.to_string(),
-                        args,
-                    },
-                );
-                return Ok(());
+        if let Some((definition_expr, body)) = expr.trim().split_once("\n") {
+            if let Some((procedure_name, procedure_expr)) = definition_expr.split_once(" ") {
+                let result: Vec<String> = self.evaluate_expr(procedure_expr, runner)?;
+                if result.len() < 1 {
+                    return Err(format!("invalid procedure definition: {}", expr));
+                }
+                if let Some(body_code) = body.trim().strip_suffix("END") {
+                    self.procedure_table.insert(
+                        procedure_name.to_string(),
+                        LogoProcedure {
+                            source_code: body_code.to_string(),
+                            args: result,
+                        },
+                    );
+                    return Ok(());
+                }
             }
         }
         return Err(format!("invalid procedure definition: {}", expr));
@@ -413,14 +429,16 @@ impl LogoInterpreter {
                 ));
             }
             let mut arg_vars_table = Box::new(HashMap::new());
-            procedure.args.iter().enumerate().for_each(|(i, v)| {
-                arg_vars_table.insert(arg_vars[i].clone(), v.clone());
+            arg_vars.iter().enumerate().for_each(|(i, v)| {
+                arg_vars_table.insert(procedure.args[i].to_string(), v.to_string());
             });
+            println!("define: arg_vars_table: {:?}", arg_vars_table);
             let mut interpreter = LogoInterpreter::new_with_args(
                 procedure.source_code.to_string(),
                 self.var_table.clone(),
                 arg_vars_table,
             );
+            
             return interpreter.interpret(runner);
         }
         return Err(format!("unknown procedure: {}", token));

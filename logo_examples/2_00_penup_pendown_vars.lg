@@ -1,6 +1,12 @@
 // Verify that the PENUP and PENDOWN commands work as expected.
-MAKE "distance "50
+MAKE "distance + "50 "10
+
+ADDASSIGN "distance + :distance "10
+
 PENUP
+
 FORWARD :distance
+
 PENDOWN
+
 FORWARD :distance
