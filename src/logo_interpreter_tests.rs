@@ -4,7 +4,7 @@ use crate::{logo_interpreter, logo_runner};
 
 #[test]
 fn test_file() {
-    let file_path = "logo_examples/5_06_dynamic_value_resolution_procedures.lg";
+    let file_path = "logo_examples/5_02_rectangles.lg";
     let content = std::fs::read_to_string(file_path).expect("Unable to read logo file");
 
     let mut interpreter = logo_interpreter::LogoInterpreter::default(content);

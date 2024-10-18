@@ -50,17 +50,15 @@ impl LogoInterpreter {
 
     fn interpret_expr(&mut self, runner: &mut LogoRunner) -> Result<(), String> {
         let token = self.next_token();
-        if token.len() == 0 {
-            self.cursor += 1;
-        }
-        // println!("token: {}", token);
         self.cursor += token.len();
-        if token.trim().is_empty() {
+        let token: &str = token.trim();
+        if token.is_empty() {
+            self.cursor += 1;
             return Ok(());
         }
         let expr = self.collect_expr(Self::get_terminator(&token))?;
         self.cursor += expr.len();
-        match token.as_str() {
+        match token {
             COMMENT => {
                 // skip comments
                 Ok(())
@@ -359,7 +357,7 @@ impl LogoInterpreter {
 
     fn evaluate_conditional_statement(
         &self,
-        token: String,
+        token: &str,
         expr: String,
         runner: &mut LogoRunner,
     ) -> Result<(), String> {
@@ -416,11 +414,11 @@ impl LogoInterpreter {
 
     fn find_evaluate_procedure(
         &mut self,
-        token: String,
+        token: &str,
         expr: String,
         runner: &mut LogoRunner,
     ) -> Result<(), String> {
-        if let Some(procedure) = self.procedure_table.get(&token) {
+        if let Some(procedure) = self.procedure_table.get(token) {
             let arg_vars = self.evaluate_expr(&expr, runner)?;
             if procedure.args.len() != arg_vars.len() {
                 return Err(format!(
@@ -438,7 +436,7 @@ impl LogoInterpreter {
                 self.var_table.clone(),
                 arg_vars_table,
             );
-            
+
             return interpreter.interpret(runner);
         }
         return Err(format!("unknown procedure: {}", token));
