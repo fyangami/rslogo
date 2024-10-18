@@ -5,10 +5,10 @@ use std::collections::HashMap;
 pub struct LogoInterpreter {
     source_code: String,
     cursor: usize,
-    line_number: usize,
     // ignore the contention in single thread
     var_table: Box<HashMap<String, String>>,
     procedure_table: Box<HashMap<String, LogoProcedure>>,
+    arg_vars_table: Box<HashMap<String, String>>,
 }
 
 pub struct LogoProcedure {
@@ -22,11 +22,19 @@ impl LogoInterpreter {
     }
 
     pub fn new(source_code: String, var_table: Box<HashMap<String, String>>) -> Self {
+        Self::new_with_args(source_code, var_table, Box::new(HashMap::new()))
+    }
+
+    pub fn new_with_args(
+        source_code: String,
+        var_table: Box<HashMap<String, String>>,
+        arg_vars_table: Box<HashMap<String, String>>,
+    ) -> Self {
         Self {
             source_code,
             cursor: 0,
-            line_number: 1,
             var_table,
+            arg_vars_table,
             procedure_table: Box::new(HashMap::new()),
         }
     }
@@ -55,27 +63,14 @@ impl LogoInterpreter {
         match token.as_str() {
             COMMENT => {
                 // skip comments
-                return Ok(());
+                Ok(())
             }
-            t if Self::is_builtin_fn(t) => {
-                return self.evaluate_builtin_fn(t, expr, runner);
-            }
-            MAKE => {
-                return self.evaluate_make_statement(expr, runner);
-            }
-            ADDASSIGN => {
-                return self.evaluate_add_assign_statement(expr, runner, false);
-            }
-            IF | WHILE => {
-                return self.evaluate_conditional_statement(token, expr, runner);
-            }
-            TO => {
-                return self.evaluate_procedure_definition(expr, runner);
-            }
-            _ => {
-                // TODO find custom procedure
-                todo!("unimplemented token")
-            }
+            t if Self::is_builtin_fn(t) => self.evaluate_builtin_fn(t, expr, runner),
+            MAKE => self.evaluate_make_statement(expr, runner),
+            ADDASSIGN => self.evaluate_add_assign_statement(expr, runner, false),
+            IF | WHILE => self.evaluate_conditional_statement(token, expr, runner),
+            TO => self.evaluate_procedure_definition(expr, runner),
+            _ => self.find_evaluate_procedure(token, expr, runner),
         }
     }
 
@@ -185,13 +180,18 @@ impl LogoInterpreter {
                             stack.push(var_value.to_string());
                             continue;
                         }
+                        // find in args table
+                        if let Some(var_value) = self.arg_vars_table.get(var_name) {
+                            stack.push(var_value.to_string());
+                            continue;
+                        }
                     }
                     return Err(format!("undefined variable: {}", item));
                 }
-                "XCOR" => stack.push(runner.get_pos_x().to_string()),
-                "YCOR" => stack.push(runner.get_pos_y().to_string()),
-                "HEADING" => stack.push(runner.get_direction().to_string()),
-                "COLOR" => stack.push(runner.get_color_index().to_string()),
+                XCOR => stack.push(runner.get_pos_x().to_string()),
+                YCOR => stack.push(runner.get_pos_y().to_string()),
+                HEADING => stack.push(runner.get_direction().to_string()),
+                COLOR => stack.push(runner.get_color_index().to_string()),
                 _ => {}
             }
         }
@@ -279,7 +279,8 @@ impl LogoInterpreter {
         match token {
             PENUP | PENDOWN | FORWARD | BACK | LEFT | RIGHT | SETX | SETY | SETPENCOLOR | TURN
             | SETHEADING | MAKE | END | ADDASSIGN => "\n",
-            _ => "END",
+            TO | WHILE | IF => "END",
+            _ => "\n",
         }
     }
 
@@ -395,5 +396,33 @@ impl LogoInterpreter {
             }
         }
         return Err(format!("invalid procedure definition: {}", expr));
+    }
+
+    fn find_evaluate_procedure(
+        &mut self,
+        token: String,
+        expr: String,
+        runner: &mut LogoRunner,
+    ) -> Result<(), String> {
+        if let Some(procedure) = self.procedure_table.get(&token) {
+            let arg_vars = self.evaluate_expr(&expr, runner)?;
+            if procedure.args.len() != arg_vars.len() {
+                return Err(format!(
+                    "invalid number of arguments for procedure: {}",
+                    token
+                ));
+            }
+            let mut arg_vars_table = Box::new(HashMap::new());
+            procedure.args.iter().enumerate().for_each(|(i, v)| {
+                arg_vars_table.insert(arg_vars[i].clone(), v.clone());
+            });
+            let mut interpreter = LogoInterpreter::new_with_args(
+                procedure.source_code.to_string(),
+                self.var_table.clone(),
+                arg_vars_table,
+            );
+            return interpreter.interpret(runner);
+        }
+        return Err(format!("unknown procedure: {}", token));
     }
 }
