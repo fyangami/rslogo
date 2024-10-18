@@ -11,7 +11,7 @@ pub const SETY: &'static str = "SETY";
 pub const SETHEADING: &'static str = "SETHEADING";
 pub const TURN: &'static str = "TURN";
 pub const SETPENCOLOR: &'static str = "SETPENCOLOR";
-pub const XCOR : &'static str = "XCOR";
+pub const XCOR: &'static str = "XCOR";
 pub const YCOR: &'static str = "YCOR";
 pub const HEADING: &'static str = "HEADING";
 pub const COLOR: &'static str = "COLOR";
@@ -22,7 +22,6 @@ pub const WHILE: &'static str = "WHILE";
 pub const TO: &'static str = "TO";
 pub const END: &'static str = "END";
 
-
 // operation code
 pub const PLUS: &'static str = "+";
 pub const MINUS: &'static str = "-";
@@ -32,7 +31,8 @@ pub const EQ: &'static str = "EQ";
 pub const NE: &'static str = "NE";
 pub const LT: &'static str = "LT";
 pub const GT: &'static str = "GT";
-
+pub const AND: &'static str = "AND";
+pub const OR: &'static str = "OR";
 
 // boolean
 pub const TRUE: &'static str = "TRUE";

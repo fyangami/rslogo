@@ -159,7 +159,7 @@ impl LogoInterpreter {
                     };
                     stack.push(result.to_string());
                 }
-                EQ | NE | LT | GT => {
+                EQ | NE | LT | GT | AND | OR => {
                     let left = stack
                         .pop()
                         .ok_or(format!("invalid expression, stack underflow : {}", expr))?;
@@ -224,6 +224,8 @@ impl LogoInterpreter {
             match op {
                 EQ => return Ok(left == right),
                 NE => return Ok(left != right),
+                AND => return Ok(left && right),
+                OR => return Ok(left || right),
                 _ => return Err(format!("invalid operator: {}", op)),
             }
         }
