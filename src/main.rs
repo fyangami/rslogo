@@ -3,7 +3,7 @@ use clap::Parser;
 mod logo_interpreter;
 mod logo_runner;
 mod logo_interpreter_tests;
-mod keywords;
+mod r#const;
 
 /// A simple program to parse four arguments using clap.
 #[derive(Parser)]

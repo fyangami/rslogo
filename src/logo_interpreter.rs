@@ -1,5 +1,5 @@
-use crate::{keywords, logo_runner::LogoRunner};
-use keywords::*;
+use crate::{logo_runner::LogoRunner, r#const};
+use r#const::*;
 use std::collections::HashMap;
 
 pub struct LogoInterpreter {
@@ -130,7 +130,7 @@ impl LogoInterpreter {
         items.reverse();
         for item in items {
             match item {
-                "+" | "-" | "*" | "/" => {
+                PLUS | MINUS | TIMES | DIVIDE => {
                     let left = stack
                         .pop()
                         .ok_or(format!("invalid expression, stack underflow : {}", expr))?
@@ -147,15 +147,15 @@ impl LogoInterpreter {
                         })?;
 
                     let result = match item {
-                        "+" => left + right,
-                        "-" => left - right,
-                        "*" => left * right,
-                        "/" => left / right,
+                        PLUS => left + right,
+                        MINUS => left - right,
+                        TIMES => left * right,
+                        DIVIDE => left / right,
                         _ => unreachable!(),
                     };
                     stack.push(result.to_string());
                 }
-                "EQ" | "NE" | "LT" | "GT" => {
+                EQ | NE | LT | GT => {
                     let left = stack
                         .pop()
                         .ok_or(format!("invalid expression, stack underflow : {}", expr))?;
@@ -200,24 +200,24 @@ impl LogoInterpreter {
 
     fn logical_op(&self, left: &str, right: &str, op: &str) -> Result<bool, String> {
         // boolean comparison
-        if left == "TRUE" || left == "FALSE" || right == "TRUE" || right == "FALSE" {
-            if left != "TRUE" && left != "FALSE" {
+        if left == TRUE || left == FALSE || right == TRUE || right == FALSE {
+            if left != TRUE && left != FALSE {
                 return Err(format!(
                     "invalid expression, right operand is not a boolean: {}",
                     left
                 ));
             }
-            if right != "TRUE" && right != "FALSE" {
+            if right != TRUE && right != FALSE {
                 return Err(format!(
                     "invalid expression, right operand is not a boolean: {}",
                     right
                 ));
             }
-            let left = left == "TRUE";
-            let right = right == "TRUE";
+            let left = left == TRUE;
+            let right = right == TRUE;
             match op {
-                "EQ" => return Ok(left == right),
-                "NE" => return Ok(left != right),
+                EQ => return Ok(left == right),
+                NE => return Ok(left != right),
                 _ => return Err(format!("invalid operator: {}", op)),
             }
         }
@@ -229,8 +229,8 @@ impl LogoInterpreter {
             .parse::<i32>()
             .map_err(|_| format!("invalid expression: {}", right))?;
         match op {
-            "GT" => return Ok(left > right),
-            "LT" => return Ok(left < right),
+            GT => return Ok(left > right),
+            LT => return Ok(left < right),
             _ => return Err(format!("invalid operator: {}", op)),
         }
     }
@@ -346,14 +346,14 @@ impl LogoInterpreter {
         expr: String,
         runner: &mut LogoRunner,
     ) -> Result<(), String> {
-        let oneshot = token == "IF";
+        let oneshot = token == IF;
         if let Some((cond_expr, body)) = expr.split_once("\n") {
             loop {
                 let result = self.evaluate_expr(cond_expr, runner)?;
                 if result.len() != 1 {
                     return Err(format!("invalid conditional expression: {:?}", result));
                 }
-                if result.iter().next().unwrap() == "TRUE" {
+                if result.iter().next().unwrap() == TRUE {
                     // condition is true, execute the body
                     if let Some(body_code) = body.trim().strip_suffix("END") {
                         let mut interpreter =
