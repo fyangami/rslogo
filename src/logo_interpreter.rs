@@ -237,10 +237,13 @@ impl LogoInterpreter {
         let mut expr = Vec::new();
         let mut cursor = self.cursor;
         while let Some(ch) = self.source_code.chars().nth(cursor) {
-            let matcher = &self.source_code[cursor - terminator.len() + 1..cursor + 1];
             expr.push(ch);
-            if matcher == terminator {
-                return Ok(expr.iter().collect::<String>());
+            let start_pos: i32 = cursor as i32 - terminator.len() as i32 + 1;
+            if start_pos >= 0 {
+                let matcher = &self.source_code[start_pos as usize..cursor + 1];
+                if matcher == terminator {
+                    return Ok(expr.iter().collect::<String>());
+                }
             }
             cursor += 1;
         }
