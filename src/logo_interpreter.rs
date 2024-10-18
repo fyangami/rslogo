@@ -200,6 +200,7 @@ impl LogoInterpreter {
                 _ => {}
             }
         }
+        stack.reverse();
         Ok(stack.to_vec())
     }
 
@@ -304,33 +305,15 @@ impl LogoInterpreter {
     }
 
     fn evaluate_make_statement(&mut self, expr: String, runner: &LogoRunner) -> Result<(), String> {
-        if let Some((var_name, val)) = expr.trim().split_once(" ") {
-            let mut parsed_var_name = String::new();
-            if var_name.starts_with("\"") {
-                if let Some(var_name) = var_name.strip_prefix("\"") {
-                    parsed_var_name = var_name.to_string();
-                }
-            }
-            let mut vt = self.var_table.lock().map_err(|e| e.to_string())?;
-            if var_name.starts_with(":") {
-                if let Some(var_name) = var_name.strip_prefix(":") {
-                    parsed_var_name = vt.get(var_name).ok_or("variable not found")?.to_string();
-                }
-            }
-            if parsed_var_name.is_empty() {
-                return Err(format!("invalid variable name: {}", var_name));
-            }
-            let val = self.evaluate_expr(val, runner)?;
-            if val.len() != 1 {
-                return Err(format!("invalid make value: {:?}", val));
-            }
-            vt.insert(
-                parsed_var_name.to_string(),
-                val.iter().next().unwrap().to_string(),
-            );
-            return Ok(());
+        let result = self.evaluate_expr(&expr, runner)?;
+        if result.len() != 2 {
+            return Err(format!("invalid make statement: {}", expr));
         }
-        Err(format!("invalid add assign statement: {}", expr))
+        let var_name = result[0].to_string();
+        let val = result[1].to_string();
+        let mut vt = self.var_table.lock().map_err(|e| e.to_string())?;
+        vt.insert(var_name, val);
+        Ok(())
     }
 
     fn evaluate_add_assign_statement(
@@ -338,45 +321,25 @@ impl LogoInterpreter {
         expr: String,
         runner: &LogoRunner,
     ) -> Result<(), String> {
-        if let Some((var_name, val)) = expr.trim().split_once(" ") {
-            let mut parsed_var_name = String::new();
-            if var_name.starts_with("\"") {
-                if let Some(var_name) = var_name.strip_prefix("\"") {
-                    parsed_var_name = var_name.to_string();
-                }
-            }
-            let mut vt = self.var_table.lock().map_err(|e| e.to_string())?;
-            if var_name.starts_with(":") {
-                if let Some(var_name) = var_name.strip_prefix(":") {
-                    parsed_var_name = vt.get(var_name).ok_or("variable not found")?.to_string();
-                }
-            }
-            if parsed_var_name.is_empty() {
-                return Err(format!("invalid variable name: {}", var_name));
-            }
-            let old_val;
-            if let Some(val) = vt.get(&parsed_var_name) {
-                old_val = val.to_owned();
-            } else {
-                return Err(format!("variable not found: {}", parsed_var_name));
-            }
-            let val = self.evaluate_expr(val, runner)?;
-            if val.len() != 1 {
-                return Err(format!("invalid numeric value: {:?}", val));
-            }
-            let new_val = old_val
-                .parse::<i32>()
-                .map_err(|_| "invalid numeric value")?
-                + val
-                    .iter()
-                    .next()
-                    .unwrap()
-                    .parse::<i32>()
-                    .map_err(|_| "invalid numeric value")?;
-            vt.insert(parsed_var_name.to_string(), new_val.to_string());
-            return Ok(());
+        let result = self.evaluate_expr(&expr, runner)?;
+        if result.len() != 2 {
+            return Err(format!("invalid addassign statement: {}", expr));
         }
-        Err(format!("invalid add assign statement: {}", expr))
+        let var_name = result[0].to_string();
+        let val: String = result[1].to_string();
+        let mut vt = self.var_table.lock().map_err(|e| e.to_string())?;
+        let old_val = vt
+            .get(&var_name)
+            .ok_or(format!("variable not found:{} ", var_name))?
+            .to_string();
+        let new_val = old_val
+            .parse::<i32>()
+            .map_err(|_| format!("invalid numeric value: {}", old_val))?
+            + val
+                .parse::<i32>()
+                .map_err(|_| format!("invalid numeric value: {}", val))?;
+        vt.insert(var_name, new_val.to_string());
+        Ok(())
     }
 
     fn evaluate_conditional_statement(
